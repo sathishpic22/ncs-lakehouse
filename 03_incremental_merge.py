@@ -6,10 +6,8 @@ from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 3: Incremental Delta Lake Upsert (MERGE INTO) ===")
 
-is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ
-
-if is_databricks:
-    spark = SparkSession.builder.appName("NCSIncrementalMerge").getOrCreate()
+if "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ:
+    spark = SparkSession.builder.getOrCreate()
 else:
     from delta import configure_spark_with_delta_pip
 
@@ -27,7 +25,6 @@ else:
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
 
 spark.sparkContext.setLogLevel("ERROR")
-
 # 2. Read incoming raw records (Source)
 bronze_glob_path = "data/bronze/ingest_date=*/*.csv"
 source_df = (

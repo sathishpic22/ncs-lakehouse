@@ -5,10 +5,8 @@ from pyspark.sql.functions import col, desc, min, round, sum, when
 
 print("=== Step 4: Building Gold Dimensional Marts (Star Schema) ===")
 
-is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ
-
-if is_databricks:
-    spark = SparkSession.builder.appName("NCSGoldProcessing").getOrCreate()
+if "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ:
+    spark = SparkSession.builder.getOrCreate()
 else:
     from delta import configure_spark_with_delta_pip
 

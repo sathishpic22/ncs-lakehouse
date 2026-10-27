@@ -1,14 +1,12 @@
 import os
-from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 2: Processing Silver Layer with PySpark & Delta Lake ===")
 
-is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ
-
-if is_databricks:
-    spark = SparkSession.builder.appName("NCSSilverProcessing").getOrCreate()
+# Check if running in Databricks or local
+if "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ:
+    spark = SparkSession.builder.getOrCreate()
 else:
     from delta import configure_spark_with_delta_pip
 
@@ -27,7 +25,7 @@ else:
 
 spark.sparkContext.setLogLevel("ERROR")
 
-# 2. Read Bronze CSV files (reads across any ingest_date partitions)
+# Read Bronze CSV files
 bronze_glob_path = "data/bronze/ingest_date=*/*.csv"
 print(f"Reading raw data from: {bronze_glob_path}")
 
@@ -37,10 +35,9 @@ raw_df = (
     .csv(bronze_glob_path)
 )
 
-record_count = raw_df.count()
-print(f"Loaded {record_count} raw records into Spark DataFrame.")
+print(f"Loaded {raw_df.count()} raw records into Spark DataFrame.")
 
-# 3. Clean, rename, and enforce schema contracts
+# Clean, rename, and enforce schema contracts
 silver_df = (
     raw_df.withColumn("field_name", trim(col("fldName")))
     .withColumn("operator", trim(col("fldOperator")))
@@ -51,7 +48,6 @@ silver_df = (
     .withColumn(
         "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
     )
-    # Construct an actual ISO Date column (e.g., 2026-03-01) for time-series analysis
     .withColumn(
         "production_date",
         to_date(
@@ -59,7 +55,7 @@ silver_df = (
                 "-",
                 col("prfYear"),
                 col("prfMonth"),
-                col("prfMonth") * 0 + 1,  # Day 1 of each month
+                col("prfMonth") * 0 + 1,
             ),
             "yyyy-M-d",
         ),
@@ -76,12 +72,10 @@ silver_df = (
     )
 )
 
-# 4. Enforce uniqueness: drop duplicate events across primary composite keys
 deduped_df = silver_df.dropDuplicates(
     ["field_name", "production_year", "production_month"]
 )
 
-# 5. Write to Silver Delta Lake Table partitioned by production_year
 silver_delta_path = "data/silver/ncs_production_silver"
 os.makedirs("data/silver", exist_ok=True)
 
@@ -95,12 +89,4 @@ print(f"Writing curated data to Delta Lake at: {silver_delta_path}...")
 )
 
 print("SUCCESS! Silver Delta Lake table created.")
-
-# 6. Verify table contents and schema via Spark
-print("\n--- Silver Delta Table Schema ---")
-deduped_df.printSchema()
-
-print("\n--- Preview of Processed Records ---")
 deduped_df.show(5, truncate=False)
-
-spark.stop()
