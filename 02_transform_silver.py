@@ -5,19 +5,26 @@ from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 2: Processing Silver Layer with PySpark & Delta Lake ===")
 
-# 1. Initialize SparkSession with Delta Lake support
-# This uses the exact engine and catalog Databricks runs on Azure
-builder = (
-    SparkSession.builder.appName("NCSSilverProcessing")
-    .master("local[*]")  # Leverage all available CPU cores
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config(
-        "spark.sql.catalog.spark_catalog",
-        "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-    )
-)
+is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ
 
-spark = configure_spark_with_delta_pip(builder).getOrCreate()
+if is_databricks:
+    spark = SparkSession.builder.appName("NCSSilverProcessing").getOrCreate()
+else:
+    from delta import configure_spark_with_delta_pip
+
+    builder = (
+        SparkSession.builder.appName("NCSSilverProcessing")
+        .master("local[*]")
+        .config(
+            "spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension"
+        )
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
+    )
+    spark = configure_spark_with_delta_pip(builder).getOrCreate()
+
 spark.sparkContext.setLogLevel("ERROR")
 
 # 2. Read Bronze CSV files (reads across any ingest_date partitions)

@@ -6,18 +6,26 @@ from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 3: Incremental Delta Lake Upsert (MERGE INTO) ===")
 
-# 1. Initialize SparkSession configured for Delta Lake operations
-builder = (
-    SparkSession.builder.appName("NCSIncrementalMerge")
-    .master("local[*]")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config(
-        "spark.sql.catalog.spark_catalog",
-        "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-    )
-)
+is_databricks = "DATABRICKS_RUNTIME_VERSION" in os.environ
 
-spark = configure_spark_with_delta_pip(builder).getOrCreate()
+if is_databricks:
+    spark = SparkSession.builder.appName("NCSIncrementalMerge").getOrCreate()
+else:
+    from delta import configure_spark_with_delta_pip
+
+    builder = (
+        SparkSession.builder.appName("NCSIncrementalMerge")
+        .master("local[*]")
+        .config(
+            "spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension"
+        )
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
+    )
+    spark = configure_spark_with_delta_pip(builder).getOrCreate()
+
 spark.sparkContext.setLogLevel("ERROR")
 
 # 2. Read incoming raw records (Source)
