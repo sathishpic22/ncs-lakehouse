@@ -1,13 +1,12 @@
 import os
-from delta import configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, desc, min, round, sum, when
 
 print("=== Step 4: Building Gold Dimensional Marts (Star Schema) ===")
 
-if "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ:
+try:
     spark = SparkSession.builder.getOrCreate()
-else:
+except Exception:
     from delta import configure_spark_with_delta_pip
 
     builder = (
@@ -22,8 +21,7 @@ else:
         )
     )
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
-
-spark.sparkContext.setLogLevel("ERROR")
+    spark.sparkContext.setLogLevel("ERROR")
 
 # 2. Read from curated Silver Delta Lake
 silver_path = "data/silver/ncs_production_silver"

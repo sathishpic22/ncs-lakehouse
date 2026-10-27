@@ -4,10 +4,10 @@ from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 2: Processing Silver Layer with PySpark & Delta Lake ===")
 
-# Check if running in Databricks or local
-if "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ:
+# Safe Spark session retrieval compatible with Databricks Serverless & Local
+try:
     spark = SparkSession.builder.getOrCreate()
-else:
+except Exception:
     from delta import configure_spark_with_delta_pip
 
     builder = (
@@ -22,8 +22,7 @@ else:
         )
     )
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
-
-spark.sparkContext.setLogLevel("ERROR")
+    spark.sparkContext.setLogLevel("ERROR")
 
 # Read Bronze CSV files
 bronze_glob_path = "data/bronze/ingest_date=*/*.csv"
@@ -44,7 +43,7 @@ silver_df = (
     .withColumn("production_year", col("prfYear").cast("int"))
     .withColumn("production_month", col("prfMonth").cast("int"))
     .withColumn("oil_net_mill_sm3", col("prfPrdOilNetMillSm3").cast("double"))
-    .withColumn("gas_net_bill_sm3", col("prfPrdGasNetBillSm3").cast("double"))
+    .withColumn("gas_net_bill_sm3", col("prfGasNetBillSm3").cast("double"))
     .withColumn(
         "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
     )

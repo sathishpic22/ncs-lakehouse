@@ -1,14 +1,13 @@
 import os
-from delta import configure_spark_with_delta_pip
 from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 3: Incremental Delta Lake Upsert (MERGE INTO) ===")
 
-if "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ:
+try:
     spark = SparkSession.builder.getOrCreate()
-else:
+except Exception:
     from delta import configure_spark_with_delta_pip
 
     builder = (
@@ -23,8 +22,8 @@ else:
         )
     )
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
+    spark.sparkContext.setLogLevel("ERROR")
 
-spark.sparkContext.setLogLevel("ERROR")
 # 2. Read incoming raw records (Source)
 bronze_glob_path = "data/bronze/ingest_date=*/*.csv"
 source_df = (
