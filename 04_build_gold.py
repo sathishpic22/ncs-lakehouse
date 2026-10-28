@@ -26,20 +26,29 @@ else:
         )
     )
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
+    spark.sparkContext.setLogLevel("ERROR")
+
+    base_dir = (
+        os.path.dirname(os.path.abspath(__file__))
+        if "__file__" in globals()
+        else os.getcwd()
+    )
     silver_df = spark.read.format("delta").load(
-        "data/silver/ncs_production_silver"
+        os.path.join(base_dir, "data/silver/ncs_production_silver")
     )
 
 print(f"Loaded {silver_df.count()} clean Silver records.")
 
-# Dimension Table
+# Dimension Table: dim_field
+print("Generating Gold Dimension: dim_field...")
 dim_field = (
     silver_df.groupBy("field_name", "operator")
     .agg(min("production_year").alias("first_production_year"))
     .orderBy("field_name")
 )
 
-# Fact Table
+# Fact Table: fct_monthly_production
+print("Generating Gold Fact: fct_monthly_production...")
 fct_production = (
     silver_df.withColumn(
         "water_cut_pct",
@@ -80,17 +89,26 @@ if is_databricks:
         .saveAsTable("fct_monthly_production")
     )
 else:
-    os.makedirs("data/gold", exist_ok=True)
-    dim_field.write.format("delta").mode("overwrite").save("data/gold/dim_field")
+    base_dir = (
+        os.path.dirname(os.path.abspath(__file__))
+        if "__file__" in globals()
+        else os.getcwd()
+    )
+    gold_dir = os.path.join(base_dir, "data/gold")
+    os.makedirs(gold_dir, exist_ok=True)
+    dim_field.write.format("delta").mode("overwrite").save(
+        os.path.join(gold_dir, "dim_field")
+    )
     (
         fct_production.write.format("delta")
         .mode("overwrite")
         .partitionBy("production_year")
-        .save("data/gold/fct_monthly_production")
+        .save(os.path.join(gold_dir, "fct_monthly_production"))
     )
 
 print("SUCCESS: Gold dimension and fact tables created.")
 
+print("\n--- Executive Summary: Total Oil Produced by Operator (Gold) ---")
 operator_summary = (
     fct_production.join(dim_field, on="field_name")
     .groupBy("operator")

@@ -26,12 +26,18 @@ else:
         )
     )
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
+    spark.sparkContext.setLogLevel("ERROR")
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir = (
+    os.path.dirname(os.path.abspath(__file__))
+    if "__file__" in globals()
+    else os.getcwd()
+)
 bronze_glob_path = (
     f"file:{os.path.join(base_dir, 'data/bronze/ingest_date=*/*.csv')}"
 )
 
+# Load the source batch
 source_df = (
     spark.read.option("header", "true")
     .csv(bronze_glob_path)
@@ -40,9 +46,9 @@ source_df = (
     .withColumn("production_year", col("prfYear").cast("int"))
     .withColumn("production_month", col("prfMonth").cast("int"))
     .withColumn("oil_net_mill_sm3", col("prfPrdOilNetMillSm3").cast("double"))
-    .withColumn("gas_net_bill_sm3", col("prfPrdGasNetBillSm3").cast("double"))
+    .withColumn("gas_net_bill_sm3", col("prfGasNetBillSm3").cast("double"))
     .withColumn(
-        "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
+        "water_net_mill_sm3", col("prfWaterNetMillSm3").cast("double")
     )
     .withColumn(
         "production_date",
@@ -60,11 +66,12 @@ source_df = (
 )
 
 if is_databricks:
-    target_table_name = "ncs_production_silver"
-    target_table = DeltaTable.forName(spark, target_table_name)
+    target_table = DeltaTable.forName(spark, "ncs_production_silver")
 else:
-    target_delta_path = "data/silver/ncs_production_silver"
-    target_table = DeltaTable.forPath(spark, target_delta_path)
+    silver_delta_path = os.path.join(
+        base_dir, "data/silver/ncs_production_silver"
+    )
+    target_table = DeltaTable.forPath(spark, silver_delta_path)
 
 print("Executing ACID MERGE INTO matching on composite key...")
 

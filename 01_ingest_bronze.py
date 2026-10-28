@@ -1,69 +1,39 @@
-import csv
 import datetime
 import os
-import random
+import requests
 
-print(
-    "--- Step 1: Ingesting Norwegian Continental Shelf Production to Bronze ---"
+print("=== Step 1: Ingesting Raw Production Data (Bronze Layer) ===")
+
+# Safe directory resolution for both local and Databricks
+base_dir = (
+    os.path.dirname(os.path.abspath(__file__))
+    if "__file__" in globals()
+    else os.getcwd()
 )
 
-# Organize Bronze storage partitioned by ingestion date
-today = datetime.datetime.now().strftime("%Y-%m-%d")
-bronze_folder = f"data/bronze/ingest_date={today}"
+# Open data endpoint from the Norwegian Offshore Directorate (Sodir)
+DATA_URL = "https://factpages.sodir.no/public?/FactPages/TableView/field_production_monthly&rs:Command=Render&rc:Toolbar=false&rc:Parameters=f&rs:Format=CSV&Top100=false&IpAddress=NotApplicable&CultureCode=en"
+
+# Bronze partition path: data/bronze/ingest_date=YYYY-MM-DD
+today_str = datetime.date.today().isoformat()
+bronze_folder = os.path.join(base_dir, f"data/bronze/ingest_date={today_str}")
 os.makedirs(bronze_folder, exist_ok=True)
-bronze_file_path = f"{bronze_folder}/ncs_monthly_production_raw.csv"
 
-# Real major offshore fields on the Norwegian Continental Shelf (NCS)
-FIELDS = [
-    ("JOHAN SVERDRUP", "Equinor Energy AS", 2019),
-    ("TROLL", "Equinor Energy AS", 1995),
-    ("EKOFISK", "ConocoPhillips Skandinavia AS", 1971),
-    ("OSEBERG", "Equinor Energy AS", 1988),
-    ("SNØHVIT", "Equinor Energy AS", 2007),
-    ("EDVARD GRIEG", "Aker BP ASA", 2015),
-    ("ALVHEIM", "Aker BP ASA", 2008),
-    ("GOLIAT", "Vår Energi ASA", 2016),
-    ("BALDER", "Vår Energi ASA", 1999),
-    ("ORMEN LANGE", "A/S Norske Shell", 2007),
-]
+bronze_file_path = os.path.join(
+    bronze_folder, "ncs_monthly_field_production.csv"
+)
 
-# Standard official Sodir schema headers
-headers = [
-    "fldName",
-    "fldOperator",
-    "prfYear",
-    "prfMonth",
-    "prfPrdOilNetMillSm3",
-    "prfPrdGasNetBillSm3",
-    "prfPrdWaterNetMillSm3",
-]
+print(f"Downloading monthly offshore production data from Sodir...")
+headers = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko)"
+}
+response = requests.get(DATA_URL, headers=headers, timeout=60)
 
-rows = []
-# Generate monthly records from 2020 through 2026 for each asset
-for field_name, operator, start_yr in FIELDS:
-    for year in range(2020, 2027):
-        for month in range(1, 13):
-            # Realistic monthly variations
-            base_oil = round(random.uniform(0.15, 2.85), 4)
-            base_gas = round(random.uniform(0.05, 1.45), 4)
-            base_water = round(random.uniform(0.02, 0.95), 4)
-
-            rows.append(
-                [
-                    field_name,
-                    operator,
-                    year,
-                    month,
-                    base_oil,
-                    base_gas,
-                    base_water,
-                ]
-            )
-
-# Write out the raw CSV file to Bronze
-with open(bronze_file_path, "w", newline="", encoding="utf-8") as f:
-    writer = csv.writer(f)
-    writer.writerow(headers)
-    writer.writerows(rows)
-
-print(f"SUCCESS! Wrote {len(rows)} production records to: {bronze_file_path}")
+if response.status_code == 200:
+    with open(bronze_file_path, "wb") as f:
+        f.write(response.content)
+    print(f"SUCCESS: Raw Bronze CSV saved to:\n  -> {bronze_file_path}")
+else:
+    raise RuntimeError(
+        f"Failed to fetch data from Sodir. Status code: {response.status_code}"
+    )
