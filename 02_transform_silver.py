@@ -28,7 +28,7 @@ else:
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
 
-# Safe current directory resolution
+# Safe directory resolution
 base_dir = (
     os.path.dirname(os.path.abspath(__file__))
     if "__file__" in globals()
@@ -49,15 +49,18 @@ raw_df = (
 print(f"Loaded {raw_df.count()} raw records into Spark DataFrame.")
 
 # Clean, cast, and enforce schema contracts
+# Fixed: prfPrdGasNetBillSm3 and prfPrdWaterNetMillSm3
 silver_df = (
     raw_df.withColumn("field_name", trim(col("fldName")))
     .withColumn("operator", trim(col("fldOperator")))
     .withColumn("production_year", col("prfYear").cast("int"))
     .withColumn("production_month", col("prfMonth").cast("int"))
     .withColumn("oil_net_mill_sm3", col("prfPrdOilNetMillSm3").cast("double"))
-    .withColumn("gas_net_bill_sm3", col("prfGasNetBillSm3").cast("double"))
     .withColumn(
-        "water_net_mill_sm3", col("prfWaterNetMillSm3").cast("double")
+        "gas_net_bill_sm3", col("prfPrdGasNetBillSm3").cast("double")
+    )
+    .withColumn(
+        "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
     )
     .withColumn(
         "production_date",
@@ -88,7 +91,6 @@ deduped_df = silver_df.dropDuplicates(
 )
 
 if is_databricks:
-    # Save directly as a managed Delta table in Databricks catalog
     target_table = "ncs_production_silver"
     print(f"Writing curated data to Databricks table: {target_table}...")
     (
@@ -98,7 +100,6 @@ if is_databricks:
         .saveAsTable(target_table)
     )
 else:
-    # Local fallback
     silver_delta_path = os.path.join(
         base_dir, "data/silver/ncs_production_silver"
     )

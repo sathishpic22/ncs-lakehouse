@@ -46,9 +46,11 @@ source_df = (
     .withColumn("production_year", col("prfYear").cast("int"))
     .withColumn("production_month", col("prfMonth").cast("int"))
     .withColumn("oil_net_mill_sm3", col("prfPrdOilNetMillSm3").cast("double"))
-    .withColumn("gas_net_bill_sm3", col("prfGasNetBillSm3").cast("double"))
     .withColumn(
-        "water_net_mill_sm3", col("prfWaterNetMillSm3").cast("double")
+        "gas_net_bill_sm3", col("prfPrdGasNetBillSm3").cast("double")
+    )
+    .withColumn(
+        "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
     )
     .withColumn(
         "production_date",
