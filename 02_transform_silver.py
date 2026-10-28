@@ -4,10 +4,14 @@ from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 2: Processing Silver Layer with PySpark & Delta Lake ===")
 
-# Safe Spark session retrieval compatible with Databricks Serverless & Local
-try:
+# Detect Databricks vs Local Mac
+is_databricks = (
+    "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ
+)
+
+if is_databricks:
     spark = SparkSession.builder.getOrCreate()
-except Exception:
+else:
     from delta import configure_spark_with_delta_pip
 
     builder = (
@@ -22,10 +26,13 @@ except Exception:
         )
     )
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
-    spark.sparkContext.setLogLevel("ERROR")
 
-# Read Bronze CSV files
-bronze_glob_path = "data/bronze/ingest_date=*/*.csv"
+# In Databricks, resolve absolute path from current notebook/file directory
+base_dir = os.path.dirname(os.path.abspath(__file__))
+bronze_glob_path = (
+    f"file:{os.path.join(base_dir, 'data/bronze/ingest_date=*/*.csv')}"
+)
+
 print(f"Reading raw data from: {bronze_glob_path}")
 
 raw_df = (
@@ -43,7 +50,7 @@ silver_df = (
     .withColumn("production_year", col("prfYear").cast("int"))
     .withColumn("production_month", col("prfMonth").cast("int"))
     .withColumn("oil_net_mill_sm3", col("prfPrdOilNetMillSm3").cast("double"))
-    .withColumn("gas_net_bill_sm3", col("prfGasNetBillSm3").cast("double"))
+    .withColumn("gas_net_bill_sm3", col("prfPrdGasNetBillSm3").cast("double"))
     .withColumn(
         "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
     )
@@ -75,17 +82,27 @@ deduped_df = silver_df.dropDuplicates(
     ["field_name", "production_year", "production_month"]
 )
 
-silver_delta_path = "data/silver/ncs_production_silver"
-os.makedirs("data/silver", exist_ok=True)
-
-print(f"Writing curated data to Delta Lake at: {silver_delta_path}...")
-
-(
-    deduped_df.write.format("delta")
-    .mode("overwrite")
-    .partitionBy("production_year")
-    .save(silver_delta_path)
-)
+if is_databricks:
+    # Production standard on Databricks: Save as a managed Delta table in Unity Catalog
+    target_table = "ncs_production_silver"
+    print(f"Writing curated data to Databricks table: {target_table}...")
+    (
+        deduped_df.write.format("delta")
+        .mode("overwrite")
+        .partitionBy("production_year")
+        .saveAsTable(target_table)
+    )
+else:
+    # Local laptop fallback
+    silver_delta_path = "data/silver/ncs_production_silver"
+    os.makedirs("data/silver", exist_ok=True)
+    print(f"Writing curated data to local path: {silver_delta_path}...")
+    (
+        deduped_df.write.format("delta")
+        .mode("overwrite")
+        .partitionBy("production_year")
+        .save(silver_delta_path)
+    )
 
 print("SUCCESS! Silver Delta Lake table created.")
 deduped_df.show(5, truncate=False)

@@ -5,9 +5,13 @@ from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 3: Incremental Delta Lake Upsert (MERGE INTO) ===")
 
-try:
+is_databricks = (
+    "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ
+)
+
+if is_databricks:
     spark = SparkSession.builder.getOrCreate()
-except Exception:
+else:
     from delta import configure_spark_with_delta_pip
 
     builder = (
@@ -22,10 +26,12 @@ except Exception:
         )
     )
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
-    spark.sparkContext.setLogLevel("ERROR")
 
-# 2. Read incoming raw records (Source)
-bronze_glob_path = "data/bronze/ingest_date=*/*.csv"
+base_dir = os.path.dirname(os.path.abspath(__file__))
+bronze_glob_path = (
+    f"file:{os.path.join(base_dir, 'data/bronze/ingest_date=*/*.csv')}"
+)
+
 source_df = (
     spark.read.option("header", "true")
     .csv(bronze_glob_path)
@@ -53,46 +59,32 @@ source_df = (
     .dropDuplicates(["field_name", "production_year", "production_month"])
 )
 
-target_delta_path = "data/silver/ncs_production_silver"
-
-# 3. Check for existing Delta table and execute MERGE
-if not DeltaTable.isDeltaTable(spark, target_delta_path):
-    print("Initial target table not found. Creating Silver table...")
-    (
-        source_df.write.format("delta")
-        .partitionBy("production_year")
-        .save(target_delta_path)
-    )
-    print("Initial Silver table populated.")
+if is_databricks:
+    target_table_name = "ncs_production_silver"
+    target_table = DeltaTable.forName(spark, target_table_name)
 else:
-    print(f"Existing Delta table detected at: {target_delta_path}")
-    print("Executing ACID MERGE INTO matching on natural composite keys...")
-
+    target_delta_path = "data/silver/ncs_production_silver"
     target_table = DeltaTable.forPath(spark, target_delta_path)
 
-    (
-        target_table.alias("target")
-        .merge(
-            source_df.alias("source"),
-            """
-            target.field_name = source.field_name AND 
-            target.production_year = source.production_year AND 
-            target.production_month = source.production_month
-            """,
-        )
-        .whenMatchedUpdateAll()
-        .whenNotMatchedInsertAll()
-        .execute()
+print("Executing ACID MERGE INTO matching on composite key...")
+
+(
+    target_table.alias("target")
+    .merge(
+        source_df.alias("source"),
+        """
+        target.field_name = source.field_name AND 
+        target.production_year = source.production_year AND 
+        target.production_month = source.production_month
+        """,
     )
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .execute()
+)
 
-    print("SUCCESS: Delta MERGE completed without full table scan or rewrite.")
-
-# 4. Inspect Table History (Delta Lake Time-Travel Feature)
-print("\n--- Inspecting Delta Table History (ACID Commits) ---")
-target_table = DeltaTable.forPath(spark, target_delta_path)
+print("SUCCESS: Delta MERGE completed.")
 history_df = target_table.history().select(
     "version", "timestamp", "operation", "operationParameters"
 )
-history_df.show(5, truncate=False)
-
-spark.stop()
+history_df.show(3, truncate=False)
