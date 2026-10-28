@@ -37,21 +37,20 @@ bronze_glob_path = (
     f"file:{os.path.join(base_dir, 'data/bronze/ingest_date=*/*.csv')}"
 )
 
-# Load the source batch
+raw_df = spark.read.option("header", "true").csv(bronze_glob_path)
+
+cols = raw_df.columns
+gas_col_name = "prfPrdGasNetBillSm3" if "prfPrdGasNetBillSm3" in cols else "prfGasNetBillSm3"
+water_col_name = "prfPrdWaterNetMillSm3" if "prfPrdWaterNetMillSm3" in cols else "prfWaterNetMillSm3"
+
 source_df = (
-    spark.read.option("header", "true")
-    .csv(bronze_glob_path)
-    .withColumn("field_name", trim(col("fldName")))
+    raw_df.withColumn("field_name", trim(col("fldName")))
     .withColumn("operator", trim(col("fldOperator")))
     .withColumn("production_year", col("prfYear").cast("int"))
     .withColumn("production_month", col("prfMonth").cast("int"))
     .withColumn("oil_net_mill_sm3", col("prfPrdOilNetMillSm3").cast("double"))
-    .withColumn(
-        "gas_net_bill_sm3", col("prfPrdGasNetBillSm3").cast("double")
-    )
-    .withColumn(
-        "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
-    )
+    .withColumn("gas_net_bill_sm3", col(gas_col_name).cast("double"))
+    .withColumn("water_net_mill_sm3", col(water_col_name).cast("double"))
     .withColumn(
         "production_date",
         to_date(

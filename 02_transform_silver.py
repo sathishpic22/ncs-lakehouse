@@ -4,7 +4,6 @@ from pyspark.sql.functions import col, concat_ws, to_date, trim
 
 print("=== Step 2: Processing Silver Layer with PySpark & Delta Lake ===")
 
-# Detect Databricks vs Local Mac
 is_databricks = (
     "DATABRICKS_RUNTIME_VERSION" in os.environ or "SPARK_REMOTE" in os.environ
 )
@@ -28,7 +27,6 @@ else:
     spark = configure_spark_with_delta_pip(builder).getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
 
-# Safe directory resolution
 base_dir = (
     os.path.dirname(os.path.abspath(__file__))
     if "__file__" in globals()
@@ -48,20 +46,19 @@ raw_df = (
 
 print(f"Loaded {raw_df.count()} raw records into Spark DataFrame.")
 
-# Clean, cast, and enforce schema contracts
-# Fixed: prfPrdGasNetBillSm3 and prfPrdWaterNetMillSm3
+# Resolve column name variations dynamically
+cols = raw_df.columns
+gas_col_name = "prfPrdGasNetBillSm3" if "prfPrdGasNetBillSm3" in cols else "prfGasNetBillSm3"
+water_col_name = "prfPrdWaterNetMillSm3" if "prfPrdWaterNetMillSm3" in cols else "prfWaterNetMillSm3"
+
 silver_df = (
     raw_df.withColumn("field_name", trim(col("fldName")))
     .withColumn("operator", trim(col("fldOperator")))
     .withColumn("production_year", col("prfYear").cast("int"))
     .withColumn("production_month", col("prfMonth").cast("int"))
     .withColumn("oil_net_mill_sm3", col("prfPrdOilNetMillSm3").cast("double"))
-    .withColumn(
-        "gas_net_bill_sm3", col("prfPrdGasNetBillSm3").cast("double")
-    )
-    .withColumn(
-        "water_net_mill_sm3", col("prfPrdWaterNetMillSm3").cast("double")
-    )
+    .withColumn("gas_net_bill_sm3", col(gas_col_name).cast("double"))
+    .withColumn("water_net_mill_sm3", col(water_col_name).cast("double"))
     .withColumn(
         "production_date",
         to_date(
