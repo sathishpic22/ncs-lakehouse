@@ -39,6 +39,18 @@ An enterprise-grade Lakehouse pipeline built on **Azure Databricks**, **PySpark*
 
 ![Databricks Workflow DAG](docs/images/databricks_workflow_dag.png)
 
+## 🚀 Production Orchestration & CI/CD
+
+### Databricks Workflow (Automated Multi-Task DAG)
+The 4-stage pipeline orchestrated on Azure Databricks Serverless Compute:
+
+![Databricks Workflow DAG RUN](docs/images/NCS-Pipeline-Job-Run.png)
+
+### Automated CI/CD Quality Gate (GitHub Actions)
+Continuous integration pipeline validating PySpark logic and data quality gates on every commit:
+
+![GitHub Actions Green Run](docs/images/CI_CD_Actions.png)
+
 ## 🛠 Local Setup & Reproduction
 
 ```bash
